@@ -1,0 +1,9 @@
+node_modules/
+*.log
+logs/
+.env
+.env.local
+.DS_Store
+backup/
+*.save
+debug-*.js
