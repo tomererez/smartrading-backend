@@ -12,6 +12,9 @@ const marketAnalyzerRoutes = require('./src/routes/marketAnalyzer');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ===== TRUST PROXY (Required for Railway/production) =====
+app.set('trust proxy', 1);
+
 // ===== MIDDLEWARE =====
 
 // CORS configuration
