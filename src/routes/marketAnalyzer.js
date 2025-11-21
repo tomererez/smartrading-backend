@@ -1,29 +1,27 @@
+// src/routes/marketAnalyzer.js - UPDATED WITH AI
+
 const express = require('express');
 const router = express.Router();
 const { marketDataService, marketMetrics } = require('../services');
+const { getAiMarketInsight } = require('../services/aiAdvisor');
 const cacheManager = require('../utils/cache');
 const logger = require('../utils/logger');
 
 /**
  * GET /api/ai-market-analyzer/btc
- * Returns comprehensive BTC market analysis with whale vs retail intelligence
- * Cached for 30 minutes (configurable)
+ * Returns comprehensive BTC market analysis with AI insight
  */
 router.get('/btc', async (req, res) => {
   const cacheKey = 'market_snapshot_btc';
   
   try {
-    // Check if we want to force refresh
     const forceRefresh = req.query.refresh === 'true';
 
-    // Try to get from cache first (unless force refresh)
+    // Check cache
     if (!forceRefresh) {
       const cached = cacheManager.get(cacheKey);
       if (cached) {
-        logger.info('Returning cached market data');
-        
-        // Extract the actual response from cache
-        // cache.get() returns { data, age, cachedAt }
+        logger.info('Returning cached market data with AI');
         const cachedResponse = cached.data;
         
         return res.json({
@@ -39,22 +37,42 @@ router.get('/btc', async (req, res) => {
       }
     }
 
-    // Fetch fresh data with history
+    // Fetch fresh data
     logger.info('Fetching fresh market data from Coinglass...');
     const { snapshot, history } = await marketDataService.getFuturesMarketData('BTCUSDT');
 
-    // Calculate comprehensive metrics
+    // Calculate metrics
     logger.info('Calculating market metrics...');
     const metrics = marketMetrics.calculateMarketMetrics(snapshot, history);
+
+    // Get AI insight
+    logger.info('Getting AI market insight from OpenAI...');
+    const aiInsight = await getAiMarketInsight({
+      snapshot,
+      metrics,
+      history
+    });
 
     // Build response
     const response = {
       success: true,
-      data: metrics,
+      data: {
+        // Core metrics (your calculations)
+        metrics,
+        
+        // AI analysis (OpenAI interpretation)
+        aiInsight,
+        
+        // Raw data for reference
+        raw: {
+          binance: snapshot.Binance,
+          bybit: snapshot.Bybit
+        }
+      },
       meta: {
         cached: false,
         timestamp: new Date().toISOString(),
-        source: 'coinglass_api_v4',
+        source: 'coinglass_api_v4 + openai',
         exchange_mapping: {
           binance: 'BTCUSDT (USDT-margined)',
           bybit: 'BTCUSD (coin-margined)'
@@ -62,9 +80,9 @@ router.get('/btc', async (req, res) => {
       }
     };
 
-    // Store in cache
+    // Cache the result
     cacheManager.set(cacheKey, response);
-    logger.info('Market data fetched and cached successfully');
+    logger.info('Market data with AI cached successfully');
 
     res.json(response);
 
@@ -79,58 +97,6 @@ router.get('/btc', async (req, res) => {
   }
 });
 
-/**
- * GET /api/ai-market-analyzer/cache-stats
- * Returns cache statistics (useful for debugging)
- */
-router.get('/cache-stats', (req, res) => {
-  const stats = cacheManager.getStats();
-  res.json({
-    success: true,
-    data: stats
-  });
-});
-
-/**
- * POST /api/ai-market-analyzer/clear-cache
- * Manually clear cache (useful for testing)
- */
-router.post('/clear-cache', (req, res) => {
-  const key = req.body.key;
-  
-  if (key) {
-    const cleared = cacheManager.clear(key);
-    res.json({
-      success: cleared,
-      message: cleared ? `Cache cleared for key: ${key}` : `Key not found: ${key}`
-    });
-  } else {
-    cacheManager.clearAll();
-    res.json({
-      success: true,
-      message: 'All cache cleared'
-    });
-  }
-});
-
-/**
- * GET /api/ai-market-analyzer/health
- * Health check for the analyzer service
- */
-router.get('/health', (req, res) => {
-  res.json({
-    success: true,
-    service: 'ai-market-analyzer',
-    status: 'operational',
-    features: {
-      exchange_divergence: '9 scenarios',
-      market_regime: '7 regimes',
-      technical_analysis: 'EMA, momentum, volatility',
-      funding_analysis: 'Z-score, extremes',
-      weighted_decision: '5 signals'
-    },
-    timestamp: new Date().toISOString()
-  });
-});
+// ... rest of your routes (cache-stats, clear-cache, health)
 
 module.exports = router;
