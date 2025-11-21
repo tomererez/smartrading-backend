@@ -1,32 +1,36 @@
-// src/routes/marketAnalyzer.js
 const express = require('express');
 const router = express.Router();
-const marketDataService = require('../services/marketDataService');
-const marketMetrics = require('../services/marketMetrics');
-const { getAiMarketInsight } = require('../services/aiAdvisor');
+const { marketDataService, marketMetrics } = require('../services');
 const cacheManager = require('../utils/cache');
 const logger = require('../utils/logger');
 
 /**
  * GET /api/ai-market-analyzer/btc
- * Returns BTC market analysis WITH OpenAI insight
+ * Returns comprehensive BTC market analysis with whale vs retail intelligence
+ * Cached for 30 minutes (configurable)
  */
 router.get('/btc', async (req, res) => {
   const cacheKey = 'market_snapshot_btc';
   
   try {
+    // Check if we want to force refresh
     const forceRefresh = req.query.refresh === 'true';
 
-    // Check cache first
+    // Try to get from cache first (unless force refresh)
     if (!forceRefresh) {
       const cached = cacheManager.get(cacheKey);
       if (cached) {
-        logger.info('✅ Returning cached market data with AI');
+        logger.info('Returning cached market data');
+        
+        // Extract the actual response from cache
+        // cache.get() returns { data, age, cachedAt }
+        const cachedResponse = cached.data;
+        
         return res.json({
-          success: true,
-          data: cached.data,
+          success: cachedResponse.success,
+          data: cachedResponse.data,
           meta: {
-            ...cached.meta,
+            ...cachedResponse.meta,
             cached: true,
             cached_at: cached.cachedAt,
             age_minutes: Math.floor(cached.age / 60000)
@@ -35,47 +39,22 @@ router.get('/btc', async (req, res) => {
       }
     }
 
-    // Step 1: Fetch market data from Coinglass
-    logger.info('📊 Fetching market data from Coinglass...');
-    const { snapshot, history } = await marketDataService.getFuturesMarketData('BTCUSDT', {
-      includeHistory: true,
-      timeframes: ['4h', '1d']
-    });
+    // Fetch fresh data with history
+    logger.info('Fetching fresh market data from Coinglass...');
+    const { snapshot, history } = await marketDataService.getFuturesMarketData('BTCUSDT');
 
-    // Step 2: Calculate metrics
-    logger.info('🔢 Calculating market metrics...');
+    // Calculate comprehensive metrics
+    logger.info('Calculating market metrics...');
     const metrics = marketMetrics.calculateMarketMetrics(snapshot, history);
 
-    // Step 3: Get OpenAI AI insight
-    logger.info('🤖 Getting OpenAI analysis...');
-    const aiInsight = await getAiMarketInsight({
-      snapshot,
-      metrics,
-      history
-    });
-
     // Build response
-    const responseData = {
-      // All your existing metrics
-      ...metrics,
-      
-      // Add OpenAI insight
-      aiInsight,
-      
-      // Keep raw data
-      raw: {
-        binance: snapshot.Binance,
-        bybit: snapshot.Bybit
-      }
-    };
-
     const response = {
       success: true,
-      data: responseData,
+      data: metrics,
       meta: {
         cached: false,
         timestamp: new Date().toISOString(),
-        source: 'coinglass_api_v4 + openai_gpt4o-mini',
+        source: 'coinglass_api_v4',
         exchange_mapping: {
           binance: 'BTCUSDT (USDT-margined)',
           bybit: 'BTCUSD (coin-margined)'
@@ -83,14 +62,14 @@ router.get('/btc', async (req, res) => {
       }
     };
 
-    // Cache the complete result
+    // Store in cache
     cacheManager.set(cacheKey, response);
-    logger.info('✅ Market data with AI cached successfully');
+    logger.info('Market data fetched and cached successfully');
 
     res.json(response);
 
   } catch (error) {
-    logger.error('❌ Error in /api/ai-market-analyzer/btc:', error);
+    logger.error('Error in /api/ai-market-analyzer/btc:', error);
     res.status(500).json({
       success: false,
       error: 'failed_to_fetch_market_data',
@@ -102,47 +81,55 @@ router.get('/btc', async (req, res) => {
 
 /**
  * GET /api/ai-market-analyzer/cache-stats
- * Get cache statistics
+ * Returns cache statistics (useful for debugging)
  */
 router.get('/cache-stats', (req, res) => {
   const stats = cacheManager.getStats();
   res.json({
     success: true,
-    data: stats,
-    timestamp: new Date().toISOString()
+    data: stats
   });
 });
 
 /**
  * POST /api/ai-market-analyzer/clear-cache
- * Clear all cache
+ * Manually clear cache (useful for testing)
  */
 router.post('/clear-cache', (req, res) => {
-  const cleared = cacheManager.clearAll();
-  logger.info(`🗑️ Cache cleared: ${cleared} entries`);
+  const key = req.body.key;
   
-  res.json({
-    success: true,
-    message: `Cleared ${cleared} cache entries`,
-    timestamp: new Date().toISOString()
-  });
+  if (key) {
+    const cleared = cacheManager.clear(key);
+    res.json({
+      success: cleared,
+      message: cleared ? `Cache cleared for key: ${key}` : `Key not found: ${key}`
+    });
+  } else {
+    cacheManager.clearAll();
+    res.json({
+      success: true,
+      message: 'All cache cleared'
+    });
+  }
 });
 
 /**
  * GET /api/ai-market-analyzer/health
- * Health check endpoint
+ * Health check for the analyzer service
  */
 router.get('/health', (req, res) => {
   res.json({
     success: true,
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
+    service: 'ai-market-analyzer',
+    status: 'operational',
     features: {
-      coinglass: true,
-      metrics: true,
-      openai: !!process.env.OPENAI_API_KEY,
-      cache: true
-    }
+      exchange_divergence: '9 scenarios',
+      market_regime: '7 regimes',
+      technical_analysis: 'EMA, momentum, volatility',
+      funding_analysis: 'Z-score, extremes',
+      weighted_decision: '5 signals'
+    },
+    timestamp: new Date().toISOString()
   });
 });
 
